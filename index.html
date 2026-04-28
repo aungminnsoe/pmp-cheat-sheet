@@ -88,8 +88,8 @@
   .quiz-opt.missed-correct { background: var(--amber-light); border-color: var(--amber); color: var(--amber-dark); }
   .quiz-explain { font-size: 12px; color: var(--text2); background: var(--bg2); border-radius: 8px; padding: 10px 12px; margin-top: 8px; line-height: 1.6; display: none; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   .quiz-explain.show { display: block; }
-  .quiz-explain .kw { background: linear-gradient(to bottom, transparent 60%, rgba(168,85,247,0.25) 60%); font-weight: 600; color: var(--text); padding: 0 1px; }
-  .quiz-explain .kw-answer { background: rgba(20,184,166,0.2); border-radius: 3px; font-weight: 700; color: var(--teal-dark); padding: 1px 4px; }
+  .quiz-q .kw { background: linear-gradient(to bottom, transparent 60%, rgba(20,184,166,0.3) 60%); font-weight: 600; padding: 0 1px; }
+  .quiz-q .kw-action { background: rgba(239,68,68,0.2); border-radius: 3px; font-weight: 800; color: var(--red); padding: 1px 4px; text-transform: uppercase; }
   .quiz-study-link { display: none; margin-top: 8px; }
   .quiz-study-link.show { display: block; }
   .quiz-study-link a { display: inline-block; font-size: 12px; font-weight: 600; color: var(--purple); background: var(--purple-light); padding: 6px 12px; border-radius: 6px; text-decoration: none; cursor: pointer; }
@@ -2982,6 +2982,7 @@ function loadQuestion() {
 
   answered = false;
   multiSelected = [];
+  singleSelected = -1;
 
   var opts = document.getElementById('quiz-options');
   opts.innerHTML = '';
@@ -3007,7 +3008,7 @@ function loadQuestion() {
   }
 
   // Normal question rendering
-  document.getElementById('quiz-submit-multi').onclick = submitMulti;
+  document.getElementById('quiz-submit-multi').onclick = multi ? submitMulti : submitSingle;
   q.opts.forEach(function(opt, i) {
     var btn = document.createElement('button');
     btn.className = 'quiz-opt';
@@ -3015,10 +3016,16 @@ function loadQuestion() {
     if (multi) {
       btn.onclick = (function(idx) { return function() { toggleMultiOption(idx); }; })(i);
     } else {
-      btn.onclick = (function(idx) { return function() { selectAnswer(idx); }; })(i);
+      btn.onclick = (function(idx) { return function() { selectSingleOption(idx); }; })(i);
     }
     opts.appendChild(btn);
   });
+
+  // For single-answer: show submit button hint
+  if (!multi) {
+    hintEl.textContent = '\u{1F4A1} Select your answer, then tap Submit. You can change before submitting.';
+    hintEl.className = 'quiz-multi-hint show';
+  }
 }
 
 // ── MATCHING QUESTIONS ──────────────────────────────
@@ -3390,12 +3397,32 @@ function submitMulti() {
   document.getElementById('quiz-next').className = 'next-btn show';
 }
 
-function selectAnswer(i) {
+var singleSelected = -1;
+
+function selectSingleOption(i) {
   if (answered) return;
+  singleSelected = i;
+  // Update visual - highlight selected, clear others
+  var allBtns = document.querySelectorAll('#quiz-options .quiz-opt');
+  allBtns.forEach(function(b, bi) {
+    if (bi === i) {
+      b.classList.add('selected-multi');
+    } else {
+      b.classList.remove('selected-multi');
+    }
+  });
+  // Show submit button
+  document.getElementById('quiz-submit-multi').className = 'quiz-submit-multi show';
+}
+
+function submitSingle() {
+  if (answered || singleSelected === -1) return;
   answered = true;
+  var i = singleSelected;
   var q = quizQuestions[current];
   var allBtns = document.querySelectorAll('#quiz-options .quiz-opt');
   allBtns.forEach(function(b, idx) {
+    b.classList.remove('selected-multi');
     if (idx === q.correct) b.classList.add('correct');
     else if (idx === i && i !== q.correct) b.classList.add('wrong');
     b.disabled = true;
@@ -3405,8 +3432,14 @@ function selectAnswer(i) {
   } else {
     wrongAnswers.push({ q: q, yourAnswer: [i], wasMulti: false });
   }
+  document.getElementById('quiz-submit-multi').className = 'quiz-submit-multi';
   showExplanation(q, i !== q.correct);
   document.getElementById('quiz-next').className = 'next-btn show';
+}
+
+// Legacy function kept for compatibility
+function selectAnswer(i) {
+  selectSingleOption(i);
 }
 
 function showExplanation(q, wasWrong) {
@@ -3420,9 +3453,13 @@ function showExplanation(q, wasWrong) {
     explainText = correctLetter + ' is correct: "' + correctText + '" — Refer to the study tab below for more context on this topic.';
   }
 
-  // Highlight keywords in the explanation
-  explainEl.innerHTML = highlightKeywords(explainText, q);
+  // Show rationale as plain text (no highlighting here)
+  explainEl.textContent = explainText;
   explainEl.className = 'quiz-explain show';
+
+  // Highlight keywords in the QUESTION text after answering
+  var questionEl = document.getElementById('quiz-question');
+  questionEl.innerHTML = highlightQuestionKeywords(q.q, q);
 
   // Show study link if wrong
   if (wasWrong) {
@@ -3434,87 +3471,109 @@ function showExplanation(q, wasWrong) {
   }
 }
 
-function highlightKeywords(text, q) {
+function highlightQuestionKeywords(text, q) {
   // Escape HTML first
   var html = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-  // 1. Highlight the correct answer text if it appears in explanation
-  if (q.opts && typeof q.correct === 'number') {
-    var correctOpt = q.opts[q.correct];
-    if (correctOpt && correctOpt.length > 3) {
-      // Try to highlight the correct answer option text (or key part of it)
-      var words = correctOpt.split(/\s+/);
-      // Use the first 4-6 meaningful words as a phrase to match
-      var keyPhrase = words.slice(0, Math.min(6, words.length)).join(' ');
-      if (keyPhrase.length > 8) {
-        var escapedPhrase = keyPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        var phraseRe = new RegExp('(' + escapedPhrase + ')', 'gi');
-        html = html.replace(phraseRe, '<span class="kw-answer">$1</span>');
-      }
-    }
-  }
+  // ── PMI TRIGGER WORDS (what to look for in exam questions) ──
 
-  // 2. Highlight PMP key terms and concepts
-  var pmpKeywords = [
-    // Process & frameworks
-    'change control board','CCB','change request','integrated change control',
-    'project charter','project management plan','business case','benefits realization',
-    'lessons learned','project closure','phase gate',
-    // Agile terms
-    'product owner','scrum master','servant leader','sprint review',
-    'sprint retrospective','sprint planning','daily standup','daily scrum',
-    'backlog refinement','product backlog','sprint backlog','definition of done',
-    'user story','story points','velocity','burn-down','burn-up','WIP limit',
-    'Kanban','Scrum','iteration','increment','MVP','minimum viable product',
-    'continuous improvement','inspect and adapt',
-    // EVM
-    'earned value','EV','planned value','PV','actual cost','AC',
-    'cost performance index','CPI','schedule performance index','SPI',
-    'cost variance','CV','schedule variance','SV',
-    'estimate at completion','EAC','estimate to complete','ETC',
-    'budget at completion','BAC','variance at completion','VAC','TCPI',
-    // Risk
-    'risk register','risk response','risk owner','risk mitigation',
-    'risk transfer','risk avoidance','risk acceptance','risk escalation',
-    'qualitative risk analysis','quantitative risk analysis','Monte Carlo',
-    'probability and impact','risk appetite','risk threshold','contingency reserve',
-    'management reserve','workaround','fallback plan','trigger','secondary risk',
-    // People & leadership
-    'emotional intelligence','servant leadership','situational leadership',
-    'conflict resolution','collaborate','compromise','smooth','force','withdraw',
-    'Tuckman','forming','storming','norming','performing','adjourning',
-    'RACI','responsibility assignment matrix','power/interest grid',
-    'stakeholder engagement','stakeholder register',
-    // Tools & techniques
-    'SWOT','root cause analysis','fishbone','Ishikawa','Pareto',
-    'affinity diagram','decision tree','expected monetary value','EMV',
-    'critical path','critical chain','resource leveling','fast tracking','crashing',
-    'rolling wave planning','progressive elaboration','prototyping',
-    'parametric estimating','analogous estimating','bottom-up estimating','three-point',
-    'PERT','work breakdown structure','WBS','scope baseline',
-    // Key phrases
-    'is correct','is the best','first step','should first','most appropriate',
-    'primary responsibility','key benefit','best approach'
+  // 1. Action keywords - these tell you WHAT PMI is asking
+  var actionKeywords = [
+    'first','next','best','most appropriate','most likely','most important',
+    'primary','should the project manager do','should the PM do',
+    'what should','least likely','except','not','initially',
+    'immediately','before anything else','prior to',
+    'highest priority','main reason','key benefit'
   ];
 
-  // Sort by length descending so longer phrases are matched first
-  pmpKeywords.sort(function(a, b) { return b.length - a.length; });
+  // 2. PMI concept triggers - these tell you WHICH topic area
+  var conceptKeywords = [
+    // Agile
+    'servant leader','product owner','scrum master','sprint','iteration',
+    'backlog','daily standup','daily meeting','retrospective','sprint review',
+    'sprint planning','user story','story points','velocity','burn-down',
+    'kanban','WIP','definition of done','definition of ready','MVP',
+    'minimum viable product','product backlog','sprint backlog',
+    'agile','hybrid','adaptive','incremental','iterative',
+    'self-organizing','cross-functional','time-boxed','time box',
+    // Process
+    'change request','change control','CCB','change control board',
+    'integrated change control','project charter','business case',
+    'project management plan','scope baseline','WBS',
+    'work breakdown structure','critical path','schedule baseline',
+    'cost baseline','configuration management','lessons learned',
+    'phase gate','rolling wave','progressive elaboration',
+    // EVM
+    'earned value','EV','planned value','PV','actual cost','AC',
+    'CPI','SPI','cost variance','schedule variance',
+    'EAC','ETC','BAC','TCPI','budget',
+    'over budget','under budget','behind schedule','ahead of schedule',
+    // Risk
+    'risk register','risk response','risk owner','risk','threat','opportunity',
+    'mitigate','transfer','avoid','accept','escalate','exploit','enhance','share',
+    'contingency','management reserve','contingency reserve',
+    'qualitative','quantitative','Monte Carlo','probability','impact',
+    'secondary risk','residual risk','workaround','risk trigger',
+    // People & Leadership
+    'conflict','collaborate','compromise','smooth','force','withdraw',
+    'Tuckman','forming','storming','norming','performing','adjourning',
+    'emotional intelligence','servant leadership','situational leadership',
+    'stakeholder','stakeholder engagement','power/interest',
+    'RACI','responsible','accountable','consulted','informed',
+    'team charter','ground rules','colocation','virtual team',
+    'coaching','mentoring','motivation','morale',
+    'cultural','political awareness','negotiation','active listening',
+    // Communication
+    'communication','communication plan','channels','information radiator',
+    'push','pull','interactive',
+    // Quality
+    'quality','audit','inspection','control chart','Pareto',
+    'root cause','fishbone','Ishikawa','cost of quality',
+    'prevention','appraisal',
+    // Procurement
+    'contract','vendor','supplier','procurement','RFP','RFQ',
+    'fixed.price','time and material','cost.reimbursable',
+    'make or buy','statement of work','SOW',
+    // Ethics
+    'ethical','conflict of interest','PMI code','compliance',
+    'regulation','legal','confidential','intellectual property',
+    'gift','bribe','whistleblow'
+  ];
 
-  pmpKeywords.forEach(function(kw) {
+  // 3. Situational clues - these signal what type of answer PMI wants
+  var situationalKeywords = [
+    'sponsor','functional manager','customer','client',
+    'team member','senior management','steering committee',
+    'new member joins','team is struggling','behind schedule',
+    'over budget','scope creep','gold plating',
+    'without informing','without approval','bypassed',
+    'refuses to','disagrees','upset','unhappy','concerned',
+    'cultural difference','remote team','distributed team',
+    'regulatory','government','compliance',
+    'lessons learned','closing','handover','transition'
+  ];
+
+  // Sort all keywords by length descending (match longer phrases first)
+  var allKeywords = actionKeywords.concat(conceptKeywords).concat(situationalKeywords);
+  allKeywords.sort(function(a, b) { return b.length - a.length; });
+
+  allKeywords.forEach(function(kw) {
     if (kw.length < 2) return;
     var escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    // Word boundary matching - case insensitive
-    // Don't match inside existing HTML tags
+    // Allow flexible matching (e.g., "fixed.price" matches "fixed-price" or "fixed price")
+    escaped = escaped.replace(/\\\./g, '[\\s\\-]?');
     var re = new RegExp('(?![^<]*>)\\b(' + escaped + ')\\b', 'gi');
+
+    var isAction = actionKeywords.indexOf(kw) !== -1;
+
     html = html.replace(re, function(match, p1) {
-      // Don't double-wrap if already inside a span
-      return '<span class="kw">' + p1 + '</span>';
+      if (isAction) {
+        return '<span class="kw-action">' + p1 + '</span>';
+      } else {
+        return '<span class="kw">' + p1 + '</span>';
+      }
     });
   });
-
-  // 3. Also highlight letter references like "A is correct", "B is the best"
-  html = html.replace(/(?![^<]*>)\b([A-E]) is (correct|the best|the most|the right|the appropriate)/gi,
-    '<span class="kw-answer">$1 is $2</span>');
 
   return html;
 }
@@ -3665,7 +3724,7 @@ function toggleReview() {
     html += '<span class="diff-badge diff-' + (q.difficulty||'medium').toLowerCase() + '">' + (q.difficulty||'Medium') + '</span>';
     html += '<span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px;background:var(--purple-light);color:var(--purple)">' + (q.cat||'') + '</span>';
     html += '</div>';
-    html += '<div class="ri-q">' + (idx+1) + '. ' + escapeHtml(q.q) + '</div>';
+    html += '<div class="ri-q quiz-q">' + highlightQuestionKeywords((idx+1) + '. ' + q.q, q) + '</div>';
     html += '<div class="ri-your">\u2718 Your answer: ' + escapeHtml(yourText) + '</div>';
     html += '<div class="ri-correct">\u2714 Correct: ' + escapeHtml(correctText) + '</div>';
     // Rationale with fallback and keyword highlighting
@@ -3674,7 +3733,7 @@ function toggleReview() {
       var ci2 = (q.all_correct && q.all_correct.length > 1) ? q.all_correct : [q.correct];
       explainText = ci2.map(function(c){ return String.fromCharCode(65+c); }).join(' & ') + ' is correct: "' + (q.opts ? q.opts[ci2[0]] || '' : '') + '" — Study the linked tab below for more detail.';
     }
-    html += '<div class="ri-explain">' + highlightKeywords(explainText, q) + '</div>';
+    html += '<div class="ri-explain">' + escapeHtml(explainText) + '</div>';
     html += '<div class="ri-link"><a onclick="goStudy(\'' + tabId + '\')">📖 Study: ' + tabLabel + ' tab →</a></div>';
     html += '</div>';
   });
