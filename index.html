@@ -217,6 +217,7 @@
   <button class="tab-btn" onclick="showTab('ethics', this)">🛡️ Ethics</button>
   <button class="tab-btn" onclick="showTab('tools', this)">🔧 Tools</button>
   <button class="tab-btn" onclick="showTab('quiz', this)">🧠 Quiz</button>
+  <button class="tab-btn" onclick="showTab('pmpui', this)">🖥️ PMP Exam</button>
   <button class="tab-btn" onclick="showTab('tracker', this)">✅ Tracker</button>
 </div>
 
@@ -1500,6 +1501,28 @@
 
 
 
+</div>
+
+<!-- PMP EXAM UI TAB -->
+<div id="tab-pmpui" class="panel">
+  <div class="card">
+    <div class="card-title" style="color:var(--blue)">🖥️ PMP Exam Simulator</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.7">
+      Practice with the <strong>exact same interface</strong> as the real PMI PMP exam. Opens in a new full-screen window with PMI's blue toolbar, radio buttons, highlight, strikethrough, flag for review, and the same navigation.
+    </div>
+    <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">Select exam length:</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+      <button class="count-btn" onclick="launchPMPExam(15)" style="min-width:60px">15</button>
+      <button class="count-btn" onclick="launchPMPExam(30)" style="min-width:60px">30</button>
+      <button class="count-btn" onclick="launchPMPExam(60)" style="min-width:60px">60</button>
+      <button class="count-btn" onclick="launchPMPExam(90)" style="min-width:60px">90</button>
+      <button class="count-btn" onclick="launchPMPExam(180)" style="min-width:80px;border-color:var(--purple);background:var(--purple);color:white">180 (Full)</button>
+    </div>
+    <div style="font-size:11px;color:var(--text3);line-height:1.6">
+      Timer is auto-set to PMI pace (~76 sec/question). 180 questions = 230 minutes, just like the real exam.<br>
+      Includes a 10-minute break at the halfway point for 90+ question sessions.
+    </div>
+  </div>
 </div>
 
 <!-- QUIZ TAB -->
@@ -3859,6 +3882,36 @@ function escapeHtml(str) {
 
 function retryQuiz() {
   startQuiz(quizCount, null);
+}
+
+// ── PMP EXAM UI SIMULATOR ────────────────────────────────────────────────
+function launchPMPExam(count) {
+  var pool = allQuestions.filter(function(q) { return !q.type; });
+  var selected = shuffleAvoidRecent(pool, Math.min(count, pool.length));
+  var totalTime = Math.round(count * (230 * 60 / 180));
+  var hasBreak = count >= 90;
+  var breakAt = Math.floor(count / 2);
+
+  var qData = selected.map(function(q) {
+    return { q: q.q, opts: q.opts, correct: q.correct, explain: q.explain || '', cat: q.cat || '' };
+  });
+
+  // Store in localStorage for the exam window to pick up
+  try {
+    localStorage.setItem('pmp_exam_data', JSON.stringify({
+      questions: qData,
+      count: count,
+      totalTime: totalTime,
+      hasBreak: hasBreak,
+      breakAt: breakAt
+    }));
+  } catch(e) {
+    alert('Could not save exam data. Please try a smaller question count.');
+    return;
+  }
+
+  // Open the exam page
+  window.open('pmp-exam.html', '_blank');
 }
 
 function backToSetup() {
